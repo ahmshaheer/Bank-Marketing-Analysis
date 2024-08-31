@@ -1,0 +1,105 @@
+# Load required libraries
+library(rpart)
+library(caret)
+library(randomForest)
+library(gbm)
+library(pROC)
+
+# Step 1: Load and Prepare Data
+Mydata <- read.csv("bank-additional.csv", sep = ";")
+Mydata <- subset(Mydata, select = -c(duration))
+
+# Convert categorical variables to factors if needed
+Mydata$y <- as.factor(Mydata$y)
+
+# Convert all character variables to factors
+Mydata[sapply(Mydata, is.character)] <- lapply(Mydata[sapply(Mydata, is.character)], as.factor)
+
+# Split data into training (80%) and validation (20%)
+set.seed(123)  # Set seed for reproducibility
+A <- sort(sample(nrow(Mydata), nrow(Mydata) * 0.8))
+Train <- Mydata[A,]  # Training data
+Val <- Mydata[-A,]   # Validation data
+
+# Step 2: Balancing the Dataset using caret's upSample
+# Using upSample to oversample the minority class
+Train_balanced <- upSample(x = Train[, -ncol(Train)], y = Train$y, yname = "y")
+
+# Step 3: Hyperparameter Tuning for Decision Tree
+# Tune the complexity parameter (cp), minbucket, and maxdepth
+tune_grid <- expand.grid(cp = seq(0.001, 0.1, by = 0.01))
+train_control <- trainControl(method = "cv", number = 10)
+dt_tuned <- train(y ~ ., data = Train_balanced, method = "rpart", 
+                  trControl = train_control, tuneGrid = tune_grid)
+best_cp <- dt_tuned$bestTune$cp
+
+# Build tuned Decision Tree model
+mtree <- rpart(y ~ ., data = Train_balanced, method = "class", 
+               control = rpart.control(cp = best_cp, minbucket = 5, maxdepth = 10))
+
+# Plot tree
+plot(mtree)
+text(mtree, pretty = FALSE, cex = .6)
+
+# Step 4: Evaluate Decision Tree Model
+Yt <- predict(mtree, Val, type = "class")  # Predict results on the validation data
+
+# Confusion Matrix
+conf.matrix <- table(Val$y, Yt)
+rownames(conf.matrix) <- paste("Actual", rownames(conf.matrix))
+colnames(conf.matrix) <- paste("Pred", colnames(conf.matrix))
+print(conf.matrix)
+
+# Accuracy and Error Rates
+acc <- mean(Val$y == Yt)  # Accuracy
+tp <- sum(Val$y == 'yes' & Yt == 'yes') / sum(Val$y == 'yes')  # True Positive Rate
+tn <- sum(Val$y == 'no' & Yt == 'no') / sum(Val$y == 'no')    # True Negative Rate
+fp <- sum(Val$y == 'no' & Yt == 'yes') / sum(Val$y == 'no')    # False Positive Rate
+fn <- sum(Val$y == 'yes' & Yt == 'no') / sum(Val$y == 'yes')   # False Negative Rate
+sprintf("Decision Tree Accuracy: %.2f", acc)
+sprintf("True Positive Rate: %.2f, True Negative Rate: %.2f", tp, tn)
+sprintf("Error Rates - False Positive Rate: %.2f, False Negative Rate: %.2f", fp, fn)
+
+# Step 5: Build and Evaluate Random Forest Model
+rf_model <- randomForest(y ~ ., data = Train_balanced, ntree = 200)
+Yt_rf <- predict(rf_model, Val)
+
+# Confusion Matrix for Random Forest
+conf.matrix_rf <- table(Val$y, Yt_rf)
+print(conf.matrix_rf)
+
+# Accuracy and Error Rates for Random Forest
+acc_rf <- mean(Val$y == Yt_rf)  # Accuracy
+tp_rf <- sum(Val$y == 'yes' & Yt_rf == 'yes') / sum(Val$y == 'yes')  # True Positive Rate
+tn_rf <- sum(Val$y == 'no' & Yt_rf == 'no') / sum(Val$y == 'no')    # True Negative Rate
+fp_rf <- sum(Val$y == 'no' & Yt_rf == 'yes') / sum(Val$y == 'no')    # False Positive Rate
+fn_rf <- sum(Val$y == 'yes' & Yt_rf == 'no') / sum(Val$y == 'yes')   # False Negative Rate
+sprintf("Random Forest Accuracy: %.2f", acc_rf)
+sprintf("True Positive Rate: %.2f, True Negative Rate: %.2f", tp_rf, tn_rf)
+sprintf("Error Rates - False Positive Rate: %.2f, False Negative Rate: %.2f", fp_rf, fn_rf)
+
+# Step 6: Build and Evaluate Gradient Boosting Model
+gbm_model <- gbm(y ~ ., data = Train_balanced, distribution = "bernoulli", 
+                 n.trees = 200, interaction.depth = 5)
+Yt_gbm <- predict(gbm_model, Val, n.trees = 200, type = "response")
+Yt_gbm_class <- ifelse(Yt_gbm > 0.5, 'yes', 'no')
+
+# Confusion Matrix for Gradient Boosting
+conf.matrix_gbm <- table(Val$y, Yt_gbm_class)
+print(conf.matrix_gbm)
+
+# Accuracy and Error Rates for Gradient Boosting
+acc_gbm <- mean(Val$y == Yt_gbm_class)  # Accuracy
+tp_gbm <- sum(Val$y == 'yes' & Yt_gbm_class == 'yes') / sum(Val$y == 'yes')  # True Positive Rate
+tn_gbm <- sum(Val$y == 'no' & Yt_gbm_class == 'no') / sum(Val$y == 'no')    # True Negative Rate
+fp_gbm <- sum(Val$y == 'no' & Yt_gbm_class == 'yes') / sum(Val$y == 'no')    # False Positive Rate
+fn_gbm <- sum(Val$y == 'yes' & Yt_gbm_class == 'no') / sum(Val$y == 'yes')   # False Negative Rate
+sprintf("Gradient Boosting Accuracy: %.2f", acc_gbm)
+sprintf("True Positive Rate: %.2f, True Negative Rate: %.2f", tp_gbm, tn_gbm)
+sprintf("Error Rates - False Positive Rate: %.2f, False Negative Rate: %.2f", fp_gbm, fn_gbm)
+
+# Optional: ROC Curve for Gradient Boosting
+roc_curve <- roc(Val$y, Yt_gbm)
+print(auc(roc_curve))
+plot(roc_curve, main = "ROC Curve for Gradient Boosting")
+
