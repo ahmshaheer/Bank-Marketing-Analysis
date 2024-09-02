@@ -1,0 +1,53 @@
+# Step 1
+# Load marketing data
+Mydata <- read.csv("bank-additional.csv", sep = ";")
+# Remove variable "duration"
+Mydata <- subset(Mydata, select = -c(duration))
+# Convert target variable to a factor
+Mydata$y <- factor(Mydata$y, levels = c("no", "yes"))
+
+# Split data into training (80%) and validation (20%)
+set.seed(42)  # Set seed for reproducibility
+A <- sort(sample(nrow(Mydata), nrow(Mydata) * 0.8)) 
+Train <- Mydata[A, ]  # Training data
+Val <- Mydata[-A, ]   # Validation data
+
+# Step 2
+# Load the randomForest library
+library(randomForest) 
+# Build a Random Forest with 500 trees, trying 15 variables at each split
+rf <- randomForest(as.factor(y) ~ ., data = Train, ntree = 500, mtry = 15, 
+                   sampsize = c(4400, 1000), nodesize = 5, importance = TRUE)
+
+# Plot importance of variables
+varImpPlot(rf) 
+
+# Step 3
+# Predict results on the validation data
+Yt <- predict(rf, Val) 
+
+# Build a confusion matrix
+conf.matrix <- table(Actual = Val$y, Predicted = Yt)
+print(conf.matrix)
+
+# Calculate accuracy and other metrics
+acc <- sum(diag(conf.matrix)) / sum(conf.matrix) # Accuracy
+
+# True Positive Rate (Sensitivity)
+tp <- conf.matrix["yes", "yes"] / sum(conf.matrix["yes", ]) 
+
+# True Negative Rate (Specificity)
+tn <- conf.matrix["no", "no"] / sum(conf.matrix["no", ])    
+
+# False Positive Rate
+fp <- conf.matrix["no", "yes"] / sum(conf.matrix["no", ])   
+
+# False Negative Rate
+fn <- conf.matrix["yes", "no"] / sum(conf.matrix["yes", ])  
+
+# Print metrics
+sprintf("Accuracy: %.2f%%", acc * 100)
+sprintf("True Positive Rate: %.2f%%", tp * 100)
+sprintf("True Negative Rate: %.2f%%", tn * 100)
+sprintf("False Positive Rate: %.2f%%", fp * 100)
+sprintf("False Negative Rate: %.2f%%", fn * 100)
