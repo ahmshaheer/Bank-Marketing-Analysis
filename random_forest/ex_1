@@ -1,5 +1,4 @@
 #random forest
-
 # Step 1
 # Load marketing data
 Mydata = read.csv("bank-additional.csv", sep = ";")
@@ -14,7 +13,7 @@ Val <- Mydata[-A,] # validation data
 # load the library randomForest
 library(randomForest) 
 # build a Random Forest of 10 DTs with outcome y on the train data
-rf <- randomForest(as.factor(y) ~ ., data = Train, ntree=10)
+rf <- randomForest(as.factor(y) ~ ., data = Train, ntree=50, mtry=15, sampsize=c(800,400))
 
 # plot importance of variables
 varImpPlot(rf) 
@@ -34,3 +33,4 @@ fp=sum(Val$y=='no' & Yt=='yes')/sum(Val$y=='no') # false positive rate
 fn=sum(Val$y=='yes' & Yt=='no')/sum(Val$y=='yes') # false negative rate
 sprintf("Accuracy:%.2f, TP:%.2f, TN:%.2f",acc,tp,tn)# formatted printing
 sprintf("Error rates: FP:%.2f, FN:%.2f",fp,fn)
+
