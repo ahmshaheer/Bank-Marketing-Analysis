@@ -1,0 +1,73 @@
+# Install necessary package if not already installed
+if (!requireNamespace("nnet", quietly = TRUE)) install.packages("nnet")
+
+# Load necessary library
+library(nnet)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Load the dataset
+data <- read.csv("bank-additional.csv", sep = ";")
+
+# Convert categorical variables to factors
+data <- data %>%
+  mutate(across(where(is.character), as.factor))
+
+# Convert the target variable to binary numeric (0 and 1)
+data$y <- ifelse(data$y == "yes", 1, 0)
+
+# Split the data into training and test sets (80/20 split)
+set.seed(123)
+trainIndex <- sample(seq_len(nrow(data)), size = 0.8 * nrow(data))
+train_data <- data[trainIndex, ]
+test_data <- data[-trainIndex, ]
+
+# Separate predictors and target variable
+x_train <- train_data %>% select(-y)
+y_train <- train_data$y
+
+x_test <- test_data %>% select(-y)
+y_test <- test_data$y
+
+# Check for and handle missing values
+if (any(is.na(x_train)) || any(is.na(x_test))) {
+  stop("Data contains missing values. Please handle missing values before proceeding.")
+}
+
+# Scale numeric predictors
+scale_features <- function(df) {
+  num_cols <- sapply(df, is.numeric)
+  df[num_cols] <- lapply(df[num_cols], scale)
+  df
+}
+
+x_train <- scale_features(x_train)
+x_test <- scale_features(x_test)
+
+# Convert factors to numeric (required by nnet)
+x_train <- as.data.frame(lapply(x_train, as.numeric))
+x_test <- as.data.frame(lapply(x_test, as.numeric))
+
+# Define and train the simple ANN model
+model <- nnet(
+  x = x_train,
+  y = y_train,
+  size = 8,            # Number of hidden units
+  linout = FALSE,      # Classification problem
+  maxit = 100,         # Maximum number of iterations
+  decay = 0.01         # Regularization parameter
+)
+
+# Make predictions on the test data
+predictions <- predict(model, newdata = x_test)
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Compute confusion matrix
+conf_matrix <- table(Predicted = as.factor(predicted_classes), Actual = as.factor(y_test))
+print(conf_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy:", round(accuracy, 2)))
+
