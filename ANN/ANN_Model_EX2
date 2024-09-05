@@ -1,0 +1,116 @@
+# Install and load necessary packages
+if (!requireNamespace("nnet", quietly = TRUE)) install.packages("nnet")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+
+library(nnet)
+library(dplyr)
+library(ggplot2)
+
+# Load the dataset
+data <- read.csv("bank-additional.csv", sep = ";")
+
+# Convert categorical variables to factors
+data <- data %>% mutate(across(where(is.character), as.factor))
+
+# Convert the target variable 'y' to binary numeric (0 and 1)
+data$y <- ifelse(data$y == "yes", 1, 0)
+
+# Check for missing values and handle if necessary
+if (any(is.na(data))) {
+  stop("Data contains missing values. Please handle missing values before proceeding.")
+}
+
+# Split the data into training (80%) and test sets (20%)
+set.seed(123)
+trainIndex <- sample(seq_len(nrow(data)), size = 0.8 * nrow(data))
+train_data <- data[trainIndex, ]
+test_data <- data[-trainIndex, ]
+
+# Ensure factor levels are consistent between training and test sets
+for (col in names(train_data)) {
+  if (is.factor(train_data[[col]])) {
+    test_data[[col]] <- factor(test_data[[col]], levels = levels(train_data[[col]]))
+  }
+}
+
+# Separate predictors and target variable
+x_train <- train_data %>% select(-y)
+y_train <- train_data$y
+
+x_test <- test_data %>% select(-y)
+y_test <- test_data$y
+
+# Function to scale numeric predictors
+scale_features <- function(df) {
+  num_cols <- sapply(df, is.numeric)
+  df[num_cols] <- lapply(df[num_cols], scale)
+  return(df)
+}
+
+# Apply scaling
+x_train <- scale_features(x_train)
+x_test <- scale_features(x_test)
+
+# Convert factors to numeric (required by nnet)
+x_train <- as.data.frame(lapply(x_train, as.numeric))
+x_test <- as.data.frame(lapply(x_test, as.numeric))
+
+# Check for missing or infinite values in scaled data
+if (any(is.na(x_train)) || any(is.na(x_test))) {
+  stop("Data contains missing values after scaling. Check data preprocessing.")
+}
+if (any(!is.finite(as.matrix(x_train))) || any(!is.finite(as.matrix(x_test)))) {
+  stop("Data contains non-finite values after scaling. Check data preprocessing.")
+}
+
+# Define parameter grids for hidden neurons and iterations
+hidden_neurons <- c(4, 8)
+iterations <- c(50, 100)
+
+# Data frame to store results
+results <- data.frame(Hidden_Neurons = integer(),
+                      Iterations = integer(),
+                      Accuracy = numeric())
+
+# Loop through combinations of hidden neurons and iterations
+for (neurons in hidden_neurons) {
+  for (iter in iterations) {
+    # Train the model
+    model <- nnet(
+      x = x_train,
+      y = y_train,
+      size = neurons,    # Number of hidden units
+      linout = FALSE,    # Classification problem
+      maxit = iter,      # Maximum number of iterations
+      decay = 0.01,      # Regularization parameter
+      trace = FALSE      # Suppress output during training
+    )
+    
+    # Make predictions on the test data
+    predictions <- predict(model, newdata = x_test, type = "raw")
+    predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+    
+    # Compute confusion matrix and accuracy
+    conf_matrix <- table(Predicted = as.factor(predicted_classes), Actual = as.factor(y_test))
+    accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+    
+    # Store results
+    results <- rbind(results, data.frame(Hidden_Neurons = neurons,
+                                         Iterations = iter,
+                                         Accuracy = round(accuracy, 2)))
+  }
+}
+
+# Print the results
+print(results)
+
+# Visualize the results
+ggplot(results, aes(x = Iterations, y = Accuracy, color = as.factor(Hidden_Neurons))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "ANN Performance with Varying Parameters",
+       x = "Number of Iterations",
+       y = "Accuracy",
+       color = "Hidden Neurons") +
+  theme_minimal()
